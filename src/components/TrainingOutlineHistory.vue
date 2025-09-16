@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { listOutlinesByDept, downloadOutline } from '../outlines'
+import { Document, Search, Download } from '@element-plus/icons-vue'
 
 const props = defineProps({ currentUser: { type: Object, required: true } })
 
@@ -35,12 +36,11 @@ function onDownload(row) {
 
 <template>
   <section class="course-panel">
+    <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-left">
         <div class="title-section">
-          <div class="icon-wrapper">
-            <span class="title-icon">🗂️</span>
-          </div>
+          <el-icon class="title-icon"><Document /></el-icon>
           <div>
             <h2 class="page-title">培训大纲历史</h2>
             <p class="page-subtitle">{{ props.currentUser.department }} · 共 {{ total }} 条历史记录</p>
@@ -49,57 +49,50 @@ function onDownload(row) {
       </div>
     </div>
 
+    <!-- 筛选区域 -->
     <div class="filter-section">
       <div class="filter-group">
         <div class="search-box">
-          <span class="search-icon">🔍</span>
-          <input class="search-input" v-model="keyword" placeholder="搜索标题、版本或日期..." />
+          <el-input
+            v-model="keyword"
+            placeholder="搜索标题、版本或日期..."
+            :prefix-icon="Search"
+            clearable
+          />
         </div>
-
       </div>
     </div>
 
+    <!-- 数据表格 -->
     <div class="table-container">
-      <div class="table-header">
-        <div class="table-title">版本列表</div>
-        <div class="table-stats">显示 {{ paged.length }} / {{ total }} 条记录</div>
-      </div>
-
-      <div class="data-table">
-        <div class="table-row header">
-          <div class="col-title">标题</div>
-          <div class="col-version">版本</div>
-          <div class="col-date">更新时间</div>
-          <div class="col-actions">操作</div>
-        </div>
-
-        <div v-for="(r, idx) in paged" :key="r.id" class="table-row" :class="{ 'row-even': idx % 2 === 0 }">
-          <div class="col-title">{{ r.title }}</div>
-          <div class="col-version"><span class="type-badge">{{ r.version }}</span></div>
-          <div class="col-date">{{ r.updatedAt }}</div>
-          <div class="col-actions">
-            <button class="action-btn detail" @click="onDownload(r)"><span class="action-icon">⬇️</span>下载附件</button>
-          </div>
-        </div>
-
-        <div v-if="paged.length === 0" class="empty-state">
-          <div class="empty-icon">📭</div>
-          <div class="empty-text">暂无历史记录</div>
-        </div>
-      </div>
+      <el-table :data="paged" stripe style="width: 100%">
+        <el-table-column prop="title" label="标题" min-width="200" />
+        <el-table-column prop="version" label="版本" width="120">
+          <template #default="{ row }">
+            <el-tag type="info">{{ row.version }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="updatedAt" label="更新时间" width="180" />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="onDownload(row)" :icon="Download">
+              下载附件
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
+    <!-- 分页 -->
     <div class="pagination-section">
-      <div class="pagination-info">
-        <span>第 {{ page }} 页，共 {{ totalPages }} 页</span>
-        <span class="divider">|</span>
-        <span>总计 {{ total }} 条记录</span>
-      </div>
-      <div class="pagination-controls">
-        <button class="page-btn" :disabled="page<=1" @click="page=Math.max(1,page-1)"><span class="page-icon">◀</span>上一页</button>
-        <div class="page-numbers"><span class="current-page">{{ page }}</span><span class="page-separator">/</span><span class="total-pages">{{ totalPages }}</span></div>
-        <button class="page-btn" :disabled="page>=totalPages" @click="page=Math.min(totalPages,page+1)">下一页<span class="page-icon">▶</span></button>
-      </div>
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :page-sizes="[5, 10, 20]"
+        :total="total"
+        layout="total, sizes, prev, pager, next, jumper"
+        background
+      />
     </div>
   </section>
 </template>

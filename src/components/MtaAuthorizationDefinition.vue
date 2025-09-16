@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { listCoursesByDept } from '../courses'
 import { listWorkItemsByDept } from '../workItems'
 import { listMtaByDept, addMta, updateMta } from '../mtaAuths'
+import { Trophy, Plus, Search, Edit, View, Document, Reading, Tools, Delete } from '@element-plus/icons-vue'
 
 const props = defineProps({ currentUser: { type: Object, required: true } })
 
@@ -46,7 +47,15 @@ const form = ref({
 })
 
 function openAdd() { editingId.value=''; resetForm(); activeTab.value='basic'; showEdit.value=true }
-function openEdit(row) { editingId.value=row.id; form.value = JSON.parse(JSON.stringify(row)); activeTab.value='basic'; showEdit.value=true }
+function openEdit(row) { 
+  editingId.value = row.id; 
+  form.value = JSON.parse(JSON.stringify(row)); 
+  // 过滤掉非本部门课程
+  const allowed = new Set((courseOptions.value || []).map(c => c.id))
+  form.value.courses = (form.value.courses || []).filter(id => allowed.has(id))
+  activeTab.value = 'basic'; 
+  showEdit.value = true 
+}
 function openDetail(row) { detail.value = row; showDetail.value = true }
 function resetForm() {
   form.value = { techName: '', projectName: '', code: '', hours: 8, level: '初级', targetAudience: '', instructors: '', assessmentMethod: '面试', objective: '', materials: '', references: '', prerequisites: '', trainingStrategy: '', courses: [], skillPractices: { minSelect: 0, minTimes: 0, items: [] }, operationPractices: { minSelect: 0, minTimes: 0, items: [] } }
@@ -84,6 +93,26 @@ function removePracticeItem(type, index) {
     form.value.operationPractices.items.splice(index, 1)
   }
 }
+
+// 切换课程选择
+function toggleCourse(courseId) {
+  const index = form.value.courses.indexOf(courseId)
+  if (index > -1) {
+    form.value.courses.splice(index, 1)
+  } else {
+    form.value.courses.push(courseId)
+  }
+}
+
+// 获取课程类型颜色
+function getCourseTypeColor(type) {
+  const colorMap = {
+    '通用': 'info',
+    '专业': 'success', 
+    '安全': 'warning'
+  }
+  return colorMap[type] || 'info'
+}
 </script>
 
 <template>
@@ -117,12 +146,8 @@ function removePracticeItem(type, index) {
       </div>
     </div>
 
+    <!-- 数据表格 -->
     <div class="table-container">
-      <div class="table-header">
-        <div class="table-title">授权列表</div>
-        <div class="table-stats">显示 {{ paged.length }} / {{ total }} 条</div>
-      </div>
-      
       <el-table :data="paged" stripe style="width: 100%">
         <el-table-column prop="techName" label="授权名称" min-width="200" />
         <el-table-column prop="level" label="等级" width="120">
@@ -164,21 +189,27 @@ function removePracticeItem(type, index) {
     >
       <el-tabs v-model="activeTab">
         <el-tab-pane label="基本信息" name="basic">
-          <el-icon><Document /></el-icon>
+          <template #label>
+            <el-icon><Document /></el-icon>
             <span>基本信息</span>
+          </template>
         </el-tab-pane>
         <el-tab-pane label="课程配置" name="courses">
-          <el-icon><Reading /></el-icon>
+          <template #label>
+            <el-icon><Reading /></el-icon>
             <span>课程配置</span>
+          </template>
         </el-tab-pane>
         <el-tab-pane label="实践配置" name="practices">
-          <el-icon><Tools /></el-icon>
+          <template #label>
+            <el-icon><Tools /></el-icon>
             <span>实践配置</span>
+          </template>
         </el-tab-pane>
       </el-tabs>
 
           <!-- 基本信息标签页 -->
-          <div v-if="activeTab === 'basic'" class="tab-content">
+      <div v-if="activeTab === 'basic'">
         <el-form :model="form" label-width="120px">
           <el-row :gutter="20">
             <el-col :span="12">
@@ -249,26 +280,73 @@ function removePracticeItem(type, index) {
           </div>
 
           <!-- 课程配置标签页 -->
-          <div v-if="activeTab === 'courses'" class="tab-content">
-        <el-form :model="form" label-width="120px">
-          <el-form-item label="配置课程（多选）">
-            <el-checkbox-group v-model="form.courses">
-              <el-checkbox
-                v-for="c in courseOptions"
-                :key="c.id"
-                :value="c.id"
-                :label="`${c.name}（${c.type}）`"
-              />
-            </el-checkbox-group>
-              <div class="selection-info">
+      <div v-if="activeTab === 'courses'">
+        <el-card shadow="never" style="border: 1px solid #e4e7ed;">
+          <template #header>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-weight: 600; color: #303133;">
+                <el-icon style="margin-right: 8px;"><Reading /></el-icon>
+                课程配置
+              </span>
+              <el-tag type="info" size="small">
                 已选择 {{ form.courses.length }} 门课程
+              </el-tag>
             </div>
-          </el-form-item>
-        </el-form>
+          </template>
+          
+          <div style="max-height: 400px; overflow-y: auto;">
+            <el-row :gutter="16">
+              <el-col 
+                v-for="course in courseOptions" 
+                :key="course.id" 
+                :span="12" 
+                style="margin-bottom: 16px;"
+              >
+                <el-card 
+                  shadow="hover" 
+                  :class="{ 'course-selected': form.courses.includes(course.id) }"
+                  style="cursor: pointer; transition: all 0.3s; border: 2px solid transparent;"
+                  @click="toggleCourse(course.id)"
+                >
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="flex: 1;">
+                      <div style="font-weight: 600; color: #303133; margin-bottom: 4px;">
+                        {{ course.name }}
+                      </div>
+                      <el-tag 
+                        :type="getCourseTypeColor(course.type)" 
+                        size="small"
+                        style="margin-right: 8px;"
+                      >
+                        {{ course.type }}
+                      </el-tag>
+                      <el-tag 
+                        :type="course.status === '启用' ? 'success' : 'danger'" 
+                        size="small"
+                      >
+                        {{ course.status }}
+                      </el-tag>
+                    </div>
+                    <el-checkbox 
+                      :model-value="form.courses.includes(course.id)"
+                      @click.stop="toggleCourse(course.id)"
+                      style="margin-left: 12px;"
+                    />
+              </div>
+                </el-card>
+              </el-col>
+            </el-row>
+            
+            <div v-if="courseOptions.length === 0" style="text-align: center; padding: 40px; color: #909399;">
+              <el-icon size="48" style="margin-bottom: 16px;"><Document /></el-icon>
+              <div>暂无可用课程</div>
+            </div>
+          </div>
+        </el-card>
           </div>
 
           <!-- 实践配置标签页 -->
-          <div v-if="activeTab === 'practices'" class="tab-content">
+      <div v-if="activeTab === 'practices'">
         <el-row :gutter="20">
           <el-col :span="12">
             <el-card header="技能实践配置">
@@ -476,6 +554,18 @@ function removePracticeItem(type, index) {
 <style scoped>
 /* 统一UI样式，沿用课程/工作项 */
 .course-panel { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 20px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,.08); }
+
+/* 课程选择卡片样式 */
+.course-selected {
+  border-color: #409eff !important;
+  background-color: #f0f9ff !important;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15) !important;
+}
+
+.course-selected:hover {
+  border-color: #337ecc !important;
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.2) !important;
+}
 .page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; padding:20px; background:linear-gradient(135deg,#fff 0%,#f1f5f9 100%); border-radius:16px; box-shadow:0 4px 20px rgba(0,0,0,.06); }
 .title-section { display:flex; align-items:center; gap:16px; }
 .icon-wrapper { width:60px; height:60px; background:linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%); border-radius:16px; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 25px rgba(59,130,246,.3); }

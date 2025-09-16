@@ -20,6 +20,13 @@ export const positionsStore = reactive({
           { id: 'mta_002', mtaId: 'm_002', isRequired: false }
         ]
       },
+      specialCertificates: {
+        minSelect: 1,
+        items: [
+          { id: 'sc_001', certId: 'm_001', isRequired: true },
+          { id: 'sc_002', certId: 'm_002', isRequired: false }
+        ]
+      },
       courses: ['c_001', 'c_002'],
       skillPractices: {
         minSelect: 1,
@@ -46,6 +53,8 @@ export const positionsStore = reactive({
           { id: 'mta_005', mtaId: 'm_003', isRequired: false }
         ]
       },
+      // 电气维护主管：当前无特种作业证书要求
+      specialCertificates: { minSelect: 0, items: [] },
       courses: ['c_001', 'c_002', 'c_003'],
       skillPractices: {
         minSelect: 2,

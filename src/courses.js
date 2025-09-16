@@ -9,6 +9,7 @@ export const coursesStore = reactive({
     { 
       id: 'c_001', 
       name: '电气安全基础', 
+      code: 'ELC-SAF-001',
       type: '安全', 
       status: '启用', 
       department: '电气部',
@@ -22,6 +23,7 @@ export const coursesStore = reactive({
     { 
       id: 'c_002', 
       name: '配电系统入门', 
+      code: 'ELC-PWR-002',
       type: '专业', 
       status: '启用', 
       department: '电气部',
@@ -31,6 +33,7 @@ export const coursesStore = reactive({
     { 
       id: 'c_003', 
       name: '教学设计基础', 
+      code: 'TRN-DES-003',
       type: '通用', 
       status: '停用', 
       department: '培训部',

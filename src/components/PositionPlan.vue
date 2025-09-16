@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { USERS, currentUser } from '../user'
 import { listPositionsByDept } from '../positions'
 import { positionPlansStore, listPlansByDept, listPlansByUser, addPlan, updatePlan, removePlan, approvePlan, rejectPlan, getUserLabel } from '../positionPlans'
+import { Plus, User, View, Edit, Delete, Check, Close } from '@element-plus/icons-vue'
 
 const props = defineProps({ currentUser: { type: Object, required: true } })
 
@@ -194,7 +195,7 @@ function statusLabel(s) {
         <el-table-column prop="updatedAt" label="更新时间" width="120" />
         <el-table-column label="操作" width="260">
           <template #default="{ row }">
-            <el-button size="small" :icon="View" @click="openDetail(row)">详情</el-button>
+            <el-button size="small" type="info" :icon="View" @click="openDetail(row)">详情</el-button>
             <el-button
               v-if="row.source==='employee' && row.createdBy===props.currentUser.id"
               size="small" type="primary" :icon="Edit" @click="openEdit(row)">编辑</el-button>

@@ -1,8 +1,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { listWorkItemsByDept, addWorkItem, updateWorkItem } from '../workItems'
+import { Tools, Plus, Search, Edit, View } from '@element-plus/icons-vue'
+import NoPermission from './NoPermission.vue'
 
 const props = defineProps({ currentUser: { type: Object, required: true } })
+const allowedRoles = ['section_chief','training_admin','dept_manager']
+const isAllowed = computed(() => allowedRoles.includes(props.currentUser.role))
 
 // 筛选与分页
 const keyword = ref('')
@@ -63,6 +67,7 @@ function openDetail(row) { detail.value = row; showDetail.value = true }
 
 <template>
   <section class="course-panel">
+    <template v-if="isAllowed">
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-left">
@@ -100,13 +105,8 @@ function openDetail(row) { detail.value = row; showDetail.value = true }
       </div>
     </div>
 
-    <!-- 列表 -->
+    <!-- 数据表格 -->
     <div class="table-container">
-      <div class="table-header">
-        <div class="table-title">工作项列表</div>
-        <div class="table-stats">显示 {{ paged.length }} / {{ total }} 条记录</div>
-      </div>
-
       <el-table :data="paged" stripe style="width: 100%">
         <el-table-column prop="name" label="名称" min-width="200">
           <template #default="{ row }">
@@ -166,6 +166,8 @@ function openDetail(row) { detail.value = row; showDetail.value = true }
         <el-button type="primary" @click="submitEdit">{{ editingId ? '保存修改' : '确认新增' }}</el-button>
       </template>
     </el-dialog>
+    </template>
+    <NoPermission v-else />
 
     <!-- 详情弹窗 -->
     <el-dialog

@@ -1,0 +1,1 @@
+localStorage.removeItem('mta_cleanup_lb_equivalent_done_v1')

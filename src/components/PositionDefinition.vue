@@ -4,6 +4,7 @@ import { listPositionsByDept, addPosition, updatePosition } from '../positions'
 import { listMtaByDept } from '../mtaAuths'
 import { listCoursesByDept } from '../courses'
 import { listWorkItemsByDept } from '../workItems'
+import { User, Plus, Search, Edit, View, Document, Trophy, Reading, Tools, Delete } from '@element-plus/icons-vue'
 
 const props = defineProps({ currentUser: { type: Object, required: true } })
 
@@ -12,6 +13,13 @@ const mtaOptions = computed(() => listMtaByDept(props.currentUser.department))
 const courseOptions = computed(() => listCoursesByDept(props.currentUser.department))
 const skillWorkItems = computed(() => listWorkItemsByDept(props.currentUser.department).filter(w => w.type === '技能'))
 const parentPositionOptions = computed(() => baseList.value.map(p => ({ value: p.name, label: p.name })))
+// 特种作业证书（来自外部系统）：此处仅提供下拉选项占位，后续可对接真实接口
+const specialCertOptions = [
+  { id: 'spc_001', name: '高压电工证' },
+  { id: 'spc_002', name: '低压电工证' },
+  { id: 'spc_003', name: '高处作业证' },
+  { id: 'spc_004', name: '焊工特种作业证' },
+]
 
 // 列表、搜索、分页
 const keyword = ref('')
@@ -43,6 +51,7 @@ const form = ref({
   level: '一级',
   description: '',
   mtaAuthorizations: { minSelect: 0, items: [] },
+  specialCertIds: [],
   courses: [],
   skillPractices: { minSelect: 0, minTimes: 0, items: [] }
 })
@@ -61,6 +70,18 @@ function openAdd() {
 function openEdit(row) { 
   editingId.value = row.id
   form.value = JSON.parse(JSON.stringify(row))
+  // 过滤掉非本部门课程
+  const allowed = new Set((courseOptions.value || []).map(c => c.id))
+  form.value.courses = (form.value.courses || []).filter(id => allowed.has(id))
+  // 将运行时结构 specialCertificates 映射回表单字段 specialCertIds（编辑态）
+  if (row && row.specialCertificates && Array.isArray(row.specialCertificates.items)) {
+    form.value.specialCertIds = row.specialCertificates.items.map(i => i.certId)
+    // 兼容保留 minSelect（如未来需要在UI中编辑，可再增加输入框）
+    form.value._specialCertMinSelect = row.specialCertificates.minSelect ?? 0
+  } else {
+    if (!Array.isArray(form.value.specialCertIds)) form.value.specialCertIds = []
+    form.value._specialCertMinSelect = 0
+  }
   activeTab.value = 'basic'
   showEdit.value = true 
 }
@@ -77,13 +98,27 @@ function resetForm() {
     level: '一级', 
     description: '',
     mtaAuthorizations: { minSelect: 0, items: [] },
+    specialCertIds: [],
+    _specialCertMinSelect: 0,
     courses: [],
     skillPractices: { minSelect: 0, minTimes: 0, items: [] }
   }
 }
 
 function submitEdit() {
-  const payload = { ...form.value, department: props.currentUser.department }
+  // 构造保存结构：将 specialCertIds 映射为运行时使用的 specialCertificates
+  const specialCertificates = {
+    minSelect: form.value._specialCertMinSelect ?? 0,
+    items: (form.value.specialCertIds || []).map(cid => ({ id: `sc_${Math.random().toString(36).slice(2,8)}`, certId: cid, isRequired: false }))
+  }
+  const payload = { 
+    ...form.value, 
+    department: props.currentUser.department,
+    specialCertificates,
+  }
+  // 不把内部字段提交
+  delete payload._specialCertMinSelect
+  delete payload.specialCertIds
   if (editingId.value) {
     updatePosition(editingId.value, payload)
   } else {
@@ -119,6 +154,26 @@ function addSkillPractice() {
 function removeSkillPractice(index) {
   form.value.skillPractices.items.splice(index, 1)
 }
+
+// 切换课程选择
+function toggleCourse(courseId) {
+  const index = form.value.courses.indexOf(courseId)
+  if (index > -1) {
+    form.value.courses.splice(index, 1)
+  } else {
+    form.value.courses.push(courseId)
+  }
+}
+
+// 获取课程类型颜色
+function getCourseTypeColor(type) {
+  const colorMap = {
+    '通用': 'info',
+    '专业': 'success', 
+    '安全': 'warning'
+  }
+  return colorMap[type] || 'info'
+}
 </script>
 
 <template>
@@ -152,239 +207,275 @@ function removeSkillPractice(index) {
       </div>
     </div>
 
+    <!-- 数据表格 -->
     <div class="table-container">
-      <div class="table-header">
-        <div class="table-title">岗位列表</div>
-        <div class="table-stats">显示 {{ paged.length }} / {{ total }} 条</div>
-      </div>
-      <div class="data-table">
-        <div class="table-row header">
-          <div class="col-name">岗位名称</div>
-          <div class="col-parent">上级岗位</div>
-          <div class="col-level">职级</div>
-          <div class="col-updated">更新时间</div>
-          <div class="col-actions">操作</div>
-        </div>
-        <div v-for="p in paged" :key="p.id" class="table-row">
-          <div class="col-name">{{ p.name }}</div>
-          <div class="col-parent">{{ p.parentPosition || '-' }}</div>
-          <div class="col-level"><span class="level-badge">{{ p.level }}</span></div>
-          <div class="col-updated">{{ p.updatedAt }}</div>
-          <div class="col-actions">
-            <button class="action-btn edit" @click="openEdit(p)"><span class="action-icon">✏️</span>编辑</button>
-            <button class="action-btn view" @click="openDetail(p)"><span class="action-icon">👁️</span>详情</button>
-          </div>
-        </div>
-        <div v-if="paged.length===0" class="empty-state">
-          <div class="empty-icon">📭</div>
-          <div class="empty-text">暂无岗位数据</div>
-        </div>
-      </div>
+      <el-table :data="paged" stripe style="width: 100%">
+        <el-table-column prop="name" label="岗位名称" min-width="150" />
+        <el-table-column prop="parentPosition" label="上级岗位" width="150">
+          <template #default="{ row }">
+            {{ row.parentPosition || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="level" label="职级" width="100">
+          <template #default="{ row }">
+            <el-tag type="success">{{ row.level }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="updatedAt" label="更新时间" width="180" />
+        <el-table-column label="操作" width="180" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="openEdit(row)" :icon="Edit">编辑</el-button>
+            <el-button type="info" size="small" @click="openDetail(row)" :icon="View">详情</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
+    <!-- 分页 -->
     <div class="pagination-section">
-      <div class="pagination-info">
-        <span>第 {{ page }} / {{ totalPages }} 页</span>
-        <span class="divider">|</span>
-        <span>共 {{ total }} 条</span>
-      </div>
-      <div class="pagination-controls">
-        <button class="page-btn" :disabled="page<=1" @click="page=Math.max(1,page-1)">
-          <span class="page-icon">◀</span>上一页
-        </button>
-        <div class="page-numbers">
-          <span class="current-page">{{ page }}</span>
-          <span class="page-separator">/</span>
-          <span class="total-pages">{{ totalPages }}</span>
-        </div>
-        <button class="page-btn" :disabled="page>=totalPages" @click="page=Math.min(totalPages,page+1)">
-          下一页<span class="page-icon">▶</span>
-        </button>
-      </div>
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :page-sizes="[5, 10, 20]"
+        :total="total"
+        layout="total, sizes, prev, pager, next, jumper"
+        background
+      />
     </div>
 
     <!-- 新增/编辑弹窗 -->
-    <div v-if="showEdit" class="modal-overlay" @click="showEdit=false">
-      <div class="modal-dialog" @click.stop>
-        <div class="modal-header">
-          <div class="modal-title">
-            <span class="modal-icon">{{ editingId ? '✏️' : '➕' }}</span>
-            <span>{{ editingId ? '修改岗位' : '新增岗位' }}</span>
-          </div>
-          <button class="close-btn" @click="showEdit=false">✕</button>
-        </div>
-        
-        <!-- 标签页导航 -->
-        <div class="modal-tabs">
-          <button 
-            class="tab-btn" 
-            :class="{ active: activeTab === 'basic' }"
-            @click="activeTab = 'basic'"
-          >
-            <span class="tab-icon">📋</span>
+    <el-dialog
+      v-model="showEdit"
+      :title="editingId ? '修改岗位' : '新增岗位'"
+      width="900px"
+      :close-on-click-modal="false"
+    >
+      <el-tabs v-model="activeTab">
+        <el-tab-pane label="基本信息" name="basic">
+          <template #label>
+            <el-icon><Document /></el-icon>
             <span>基本信息</span>
-          </button>
-          <button 
-            class="tab-btn" 
-            :class="{ active: activeTab === 'mta' }"
-            @click="activeTab = 'mta'"
-          >
-            <span class="tab-icon">🎓</span>
+          </template>
+        </el-tab-pane>
+        <el-tab-pane label="MTA授权" name="mta">
+          <template #label>
+            <el-icon><Trophy /></el-icon>
             <span>MTA授权</span>
-          </button>
-          <button 
-            class="tab-btn" 
-            :class="{ active: activeTab === 'courses' }"
-            @click="activeTab = 'courses'"
-          >
-            <span class="tab-icon">📚</span>
+          </template>
+        </el-tab-pane>
+        <el-tab-pane label="特种作业证书" name="special">
+          <template #label>
+            <el-icon><Trophy /></el-icon>
+            <span>特种作业证书</span>
+          </template>
+        </el-tab-pane>
+        <el-tab-pane label="课程配置" name="courses">
+          <template #label>
+            <el-icon><Reading /></el-icon>
             <span>课程配置</span>
-          </button>
-          <button 
-            class="tab-btn" 
-            :class="{ active: activeTab === 'practices' }"
-            @click="activeTab = 'practices'"
-          >
-            <span class="tab-icon">🔧</span>
+          </template>
+        </el-tab-pane>
+        <el-tab-pane label="实践配置" name="practices">
+          <template #label>
+            <el-icon><Tools /></el-icon>
             <span>实践配置</span>
-          </button>
-        </div>
-
-        <div class="modal-body">
-          <!-- 基本信息标签页 -->
-          <div v-if="activeTab === 'basic'" class="tab-content">
-            <div class="grid2">
-              <div class="form-group">
-                <label class="form-label">岗位名称 *</label>
-                <input class="form-input" v-model="form.name" placeholder="请输入岗位名称" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">上级岗位</label>
-                <select class="form-select" v-model="form.parentPosition">
-                  <option value="">请选择上级岗位</option>
-                  <option v-for="option in parentPositionOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">职级</label>
-                <select class="form-select" v-model="form.level">
-                  <option>一级</option>
-                  <option>二级</option>
-                  <option>三级</option>
-                  <option>四级</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">所属部门</label>
-                <input class="form-input disabled" :value="props.currentUser.department" disabled />
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">岗位描述</label>
-              <textarea class="form-input" rows="3" v-model="form.description" placeholder="请输入岗位描述"></textarea>
-            </div>
-          </div>
-
-          <!-- MTA授权配置标签页 -->
-          <div v-if="activeTab === 'mta'" class="tab-content">
-            <div class="form-group">
-              <label class="form-label">配置MTA授权</label>
-              <div class="mta-items-container">
-                <div v-for="(item, index) in form.mtaAuthorizations.items" :key="item.id" class="mta-item">
-                  <select class="form-select mta-select" v-model="item.mtaId">
-                    <option value="">请选择MTA授权</option>
-                    <option v-for="mta in mtaOptions" :key="mta.id" :value="mta.id">
-                      {{ mta.techName }} ({{ mta.level }})
-                    </option>
-                  </select>
-                  <label class="required-checkbox">
-                    <input type="checkbox" v-model="item.isRequired" />
-                    <span>必选</span>
-                  </label>
-                  <button type="button" class="remove-btn" @click="removeMtaAuthorization(index)">删除</button>
-                </div>
-                <button type="button" class="add-mta-btn" @click="addMtaAuthorization">
-                  ➕ 添加MTA授权
-                </button>
-              </div>
-            </div>
-            <div class="inline-conds">
-              <label class="cond-item">
-                <span>至少选择</span>
-                <input class="num" type="number" v-model.number="form.mtaAuthorizations.minSelect" min="0" />
-                <span>项</span>
-              </label>
-            </div>
-            <div class="selection-info">
-              已配置 {{ form.mtaAuthorizations.items.length }} 项MTA授权
-            </div>
-          </div>
-
-          <!-- 课程配置标签页 -->
-          <div v-if="activeTab === 'courses'" class="tab-content">
-            <div class="form-group">
-              <label class="form-label">配置课程（多选）</label>
-              <div class="chips-container">
-                <label v-for="c in courseOptions" :key="c.id" class="chip">
-                  <input type="checkbox" :value="c.id" v-model="form.courses" />
-                  <span class="chip-text">{{ c.name }}（{{ c.type }}）</span>
-                </label>
-              </div>
-              <div class="selection-info">
-                已选择 {{ form.courses.length }} 门课程
-              </div>
-            </div>
-          </div>
-
-          <!-- 实践配置标签页 -->
-          <div v-if="activeTab === 'practices'" class="tab-content">
-            <div class="form-group">
-              <label class="form-label">配置技能实践项目</label>
-              <div class="practice-items-container">
-                <div v-for="(item, index) in form.skillPractices.items" :key="item.id" class="practice-item">
-                  <select class="form-select practice-select" v-model="item.workItemId">
-                    <option value="">请选择工作项</option>
-                    <option v-for="workItem in skillWorkItems" :key="workItem.id" :value="workItem.id">
-                      {{ workItem.name }}
-                    </option>
-                  </select>
-                  <label class="required-checkbox">
-                    <input type="checkbox" v-model="item.isRequired" />
-                    <span>必填</span>
-                  </label>
-                  <button type="button" class="remove-btn" @click="removeSkillPractice(index)">删除</button>
-                </div>
-                <button type="button" class="add-practice-btn" @click="addSkillPractice">
-                  ➕ 添加技能实践项目
-                </button>
-              </div>
-            </div>
-            <div class="inline-conds">
-              <label class="cond-item">
-                <span>至少选择</span>
-                <input class="num" type="number" v-model.number="form.skillPractices.minSelect" min="0" />
-                <span>项</span>
-              </label>
-              <label class="cond-item">
-                <span>至少完成</span>
-                <input class="num" type="number" v-model.number="form.skillPractices.minTimes" min="0" />
-                <span>次</span>
-              </label>
-            </div>
-            <div class="selection-info">
-              已配置 {{ form.skillPractices.items.length }} 项技能实践
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <button class="btn-secondary" @click="showEdit=false">取消</button>
-          <button class="btn-primary" @click="submitEdit">{{ editingId ? '保存修改' : '确认新增' }}</button>
-        </div>
+          </template>
+        </el-tab-pane>
+      </el-tabs>
+      <!-- 基本信息标签页 -->
+      <div v-if="activeTab === 'basic'">
+        <el-form :model="form" label-width="120px">
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="岗位名称" required>
+                <el-input v-model="form.name" placeholder="请输入岗位名称" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="上级岗位">
+                <el-select v-model="form.parentPosition" placeholder="请选择上级岗位" clearable>
+                  <el-option
+                    v-for="option in parentPositionOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    :label="option.label"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="职级">
+                <el-select v-model="form.level" placeholder="请选择职级">
+                  <el-option label="一级" value="一级" />
+                  <el-option label="二级" value="二级" />
+                  <el-option label="三级" value="三级" />
+                  <el-option label="四级" value="四级" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="所属部门">
+                <el-input :value="props.currentUser.department" disabled />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-form-item label="岗位描述">
+            <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入岗位描述" />
+          </el-form-item>
+        </el-form>
       </div>
-    </div>
+
+      <!-- MTA授权配置标签页 -->
+      <div v-if="activeTab === 'mta'">
+        <el-form :model="form" label-width="120px">
+          <el-form-item label="配置MTA授权">
+            <div class="mta-items-container">
+              <div v-for="(item, index) in form.mtaAuthorizations.items" :key="item.id" class="mta-item">
+                <el-select v-model="item.mtaId" placeholder="请选择MTA授权" style="flex: 1; margin-right: 12px;">
+                  <el-option
+                    v-for="mta in mtaOptions"
+                    :key="mta.id"
+                    :value="mta.id"
+                    :label="`${mta.techName} (${mta.level})`"
+                  />
+                </el-select>
+                <el-checkbox v-model="item.isRequired" style="margin-right: 12px;">必选</el-checkbox>
+                <el-button type="danger" size="small" @click="removeMtaAuthorization(index)" :icon="Delete">删除</el-button>
+              </div>
+              <el-button type="primary" @click="addMtaAuthorization" :icon="Plus" style="width: 100%; margin-top: 12px;">
+                添加MTA授权
+              </el-button>
+            </div>
+          </el-form-item>
+          <el-form-item label="至少选择">
+            <el-input-number v-model="form.mtaAuthorizations.minSelect" :min="0" />
+            <span style="margin-left: 8px;">项</span>
+          </el-form-item>
+          <div class="selection-info">
+            已配置 {{ form.mtaAuthorizations.items.length }} 项MTA授权
+          </div>
+        </el-form>
+      </div>
+
+      <!-- 特种作业证书（来自外部系统，多选） -->
+      <div v-if="activeTab === 'special'">
+        <el-form :model="form" label-width="140px">
+          <el-form-item label="选择特种作业证书">
+            <el-select v-model="form.specialCertIds" multiple placeholder="请选择特种作业证书" style="width: 100%" filterable collapse-tags collapse-tags-tooltip>
+              <el-option v-for="op in specialCertOptions" :key="op.id" :value="op.id" :label="op.name" />
+            </el-select>
+          </el-form-item>
+          <div class="selection-info">已选择 {{ form.specialCertIds.length }} 项特种作业证书</div>
+        </el-form>
+      </div>
+
+      <!-- 课程配置标签页 -->
+      <div v-if="activeTab === 'courses'">
+        <el-card shadow="never" style="border: 1px solid #e4e7ed;">
+          <template #header>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-weight: 600; color: #303133;">
+                <el-icon style="margin-right: 8px;"><Reading /></el-icon>
+                课程配置
+              </span>
+              <el-tag type="info" size="small">
+                已选择 {{ form.courses.length }} 门课程
+              </el-tag>
+            </div>
+          </template>
+          
+          <div style="max-height: 400px; overflow-y: auto;">
+            <el-row :gutter="16">
+              <el-col 
+                v-for="course in courseOptions" 
+                :key="course.id" 
+                :span="12" 
+                style="margin-bottom: 16px;"
+              >
+                <el-card 
+                  shadow="hover" 
+                  :class="{ 'course-selected': form.courses.includes(course.id) }"
+                  style="cursor: pointer; transition: all 0.3s; border: 2px solid transparent;"
+                  @click="toggleCourse(course.id)"
+                >
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="flex: 1;">
+                      <div style="font-weight: 600; color: #303133; margin-bottom: 4px;">
+                        {{ course.name }}
+                      </div>
+                      <el-tag 
+                        :type="getCourseTypeColor(course.type)" 
+                        size="small"
+                        style="margin-right: 8px;"
+                      >
+                        {{ course.type }}
+                      </el-tag>
+                      <el-tag 
+                        :type="course.status === '启用' ? 'success' : 'danger'" 
+                        size="small"
+                      >
+                        {{ course.status }}
+                      </el-tag>
+                    </div>
+                    <el-checkbox 
+                      :model-value="form.courses.includes(course.id)"
+                      @click.stop="toggleCourse(course.id)"
+                      style="margin-left: 12px;"
+                    />
+                  </div>
+                </el-card>
+              </el-col>
+            </el-row>
+            
+            <div v-if="courseOptions.length === 0" style="text-align: center; padding: 40px; color: #909399;">
+              <el-icon size="48" style="margin-bottom: 16px;"><Document /></el-icon>
+              <div>暂无可用课程</div>
+            </div>
+          </div>
+        </el-card>
+      </div>
+
+      <!-- 实践配置标签页 -->
+      <div v-if="activeTab === 'practices'">
+        <el-form :model="form" label-width="120px">
+          <el-form-item label="配置技能实践项目">
+            <div class="practice-items-container">
+              <div v-for="(item, index) in form.skillPractices.items" :key="item.id" class="practice-item">
+                <el-select v-model="item.workItemId" placeholder="请选择工作项" style="flex: 1; margin-right: 12px;">
+                  <el-option
+                    v-for="workItem in skillWorkItems"
+                    :key="workItem.id"
+                    :value="workItem.id"
+                    :label="workItem.name"
+                  />
+                </el-select>
+                <el-checkbox v-model="item.isRequired" style="margin-right: 12px;">必填</el-checkbox>
+                <el-button type="danger" size="small" @click="removeSkillPractice(index)" :icon="Delete">删除</el-button>
+              </div>
+              <el-button type="primary" @click="addSkillPractice" :icon="Plus" style="width: 100%; margin-top: 12px;">
+                添加技能实践项目
+              </el-button>
+            </div>
+          </el-form-item>
+          <el-form-item label="至少选择">
+            <el-input-number v-model="form.skillPractices.minSelect" :min="0" />
+            <span style="margin-left: 8px;">项</span>
+          </el-form-item>
+          <el-form-item label="至少完成">
+            <el-input-number v-model="form.skillPractices.minTimes" :min="0" />
+            <span style="margin-left: 8px;">次</span>
+          </el-form-item>
+          <div class="selection-info">
+            已配置 {{ form.skillPractices.items.length }} 项技能实践
+          </div>
+        </el-form>
+      </div>
+      
+      <template #footer>
+        <el-button @click="showEdit = false">取消</el-button>
+        <el-button type="primary" @click="submitEdit">{{ editingId ? '保存修改' : '确认新增' }}</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 详情查看弹窗 -->
     <div v-if="showDetail" class="modal-overlay" @click="showDetail = false">
@@ -466,6 +557,18 @@ function removeSkillPractice(index) {
               </div>
             </span>
           </div>
+
+          <!-- 特种作业证书信息（外部系统） -->
+          <div class="detail-row" v-if="detail?.specialCertIds && detail.specialCertIds.length > 0">
+            <span class="detail-label">特种作业证书：</span>
+            <span class="detail-value">
+              <div class="courses-display">
+                <div v-for="cid in detail.specialCertIds" :key="cid" class="course-item-display">
+                  {{ (specialCertOptions.find(o => o.id === cid) || {}).name || cid }}
+                </div>
+              </div>
+            </span>
+          </div>
         </div>
         
         <div class="modal-footer">
@@ -479,6 +582,18 @@ function removeSkillPractice(index) {
 <style scoped>
 /* 统一UI样式，沿用其他组件 */
 .position-panel { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 20px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,.08); }
+
+/* 课程选择卡片样式 */
+.course-selected {
+  border-color: #409eff !important;
+  background-color: #f0f9ff !important;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15) !important;
+}
+
+.course-selected:hover {
+  border-color: #337ecc !important;
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.2) !important;
+}
 .page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; padding:20px; background:linear-gradient(135deg,#fff 0%,#f1f5f9 100%); border-radius:16px; box-shadow:0 4px 20px rgba(0,0,0,.06); }
 .title-section { display:flex; align-items:center; gap:16px; }
 .icon-wrapper { width:60px; height:60px; background:linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%); border-radius:16px; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 25px rgba(59,130,246,.3); }

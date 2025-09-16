@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { Reading, ArrowDown, Setting, Calendar, Trophy, User, Tools } from '@element-plus/icons-vue'
 
 const props = defineProps({
   currentUser: { type: Object, required: false, default: null }
@@ -15,25 +16,25 @@ const baseMenu = [
     label: '后台管理',
     children: [
       { key: '课程定义', label: '课程定义', roles: ['section_chief','training_admin','dept_manager'] },
-      { key: '工作项定义', label: '工作项定义', roles: ['section_chief','training_admin','dept_manager'] },
+      { key: '工作项定义', label: '实践项目定义', roles: ['section_chief','training_admin','dept_manager'] },
       { key: '岗位培训大纲历史', label: '岗位培训大纲历史' },
     ],
   },
-  { icon: 'Calendar', label: '计划管理', children: [ { key: '岗位规划', label: '岗位规划' }, { key: '计划定义', label: '计划定义' } ] },
+  { icon: 'Calendar', label: '计划管理', children: [ { key: '岗位规划', label: '岗位规划' }, { key: '计划定义', label: '计划定义' }, { key: '计划统计', label: '计划统计', roles: ['section_chief','training_admin','dept_manager'] } ] },
   { icon: 'Reading', label: '培训管理', children: [
     { key: '培训管理', label: '培训管理' },
+    { key: '培训指导', label: '培训指导' },
     { key: '实践考核记录', label: '实践考核记录' },
-    { key: '实践考核记录评价（管理端）', label: '实践考核记录评价（管理端）' },
-    { key: '发起流程（培训项目等效）', label: '发起流程（培训项目等效）' },
+    { key: '实践考核记录评价', label: '实践考核记录评价', roles: ['training_admin','section_chief','dept_manager','assessor'] },
   ]},
   { icon: 'Trophy', label: 'MTA培训', children: [
     { key: 'MTA授权定义', label: 'MTA授权定义', roles: ['section_chief','training_admin','dept_manager'] },
-    { key: '授权证书模版定义', label: '授权证书模版定义' },
+    { key: '授权证书模版定义', label: '授权证书模版定义', roles: ['section_chief','training_admin','dept_manager'] },
+    { key: '我的MTA授权', label: '我的MTA授权' },
     { key: '本部门授权情况', label: '本部门授权情况' },
     { key: '发起流程', label: '发起流程' },
-    { key: 'MTA考核', label: 'MTA考核' },
-    { key: 'MTA考核评价（管理端）', label: 'MTA考核评价（管理端）' },
-    { key: 'MTA考核题目定义', label: 'MTA考核题目定义' },
+    { key: 'MTA考核', label: 'MTA考核', roles: ['employee','training_admin','section_chief','dept_manager','assessor'] },
+    { key: 'MTA考核题目定义', label: 'MTA考核笔试题库' },
     { key: 'MTA考核笔试试卷', label: 'MTA考核笔试试卷' },
   ]},
   { icon: 'User', label: '岗位管理', children: [
@@ -44,8 +45,7 @@ const baseMenu = [
     { key: '岗位考核', label: '岗位考核' },
     { key: '岗位考核评价（管理端）', label: '岗位考核评价（管理端）' },
     { key: '岗位工作总结设想', label: '岗位工作总结设想' },
-    { key: '岗位考核题目定义', label: '岗位考核题目定义' },
-    { key: '岗位考核笔试试卷', label: '岗位考核笔试试卷' },
+    { key: '我的岗位', label: '我的岗位' },
   ]},
   { icon: 'Tools', label: '工作管理', children: [
     { key: '工作定义', label: '工作定义' },
@@ -83,7 +83,7 @@ function selectItem(key) {
   <aside class="sider">
     <div class="brand">
       <el-icon class="brand-icon"><Reading /></el-icon>
-      <span class="brand-text">人员绩效管理系统</span>
+      <span class="brand-text">培训授权</span>
     </div>
 
     <nav class="menu">
@@ -130,7 +130,6 @@ function selectItem(key) {
 .brand-icon { font-size: 20px; }
 
 .menu { display: flex; flex-direction: column; gap: 8px; }
-.group { }
 .group-title {
   display: flex;
   align-items: center;

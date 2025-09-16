@@ -1,0 +1,1 @@
+localStorage.removeItem('mta_cleanup_lb_highvoltage_done_v1')
