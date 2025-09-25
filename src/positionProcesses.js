@@ -25,7 +25,8 @@ export function addPositionProcess(payload) {
   // 根据流程类型设置不同的初始节点
   let initialNode = '培训工程师审核'
   if (payload.type === 'equivalent') {
-    initialNode = '培训工程师审核'
+    // 岗位等效流程：由申请人填写并签名后提交至科长
+    initialNode = '申请人提交'
   } else if (payload.type === 'extend') {
     initialNode = '科长审核'
   } else if (payload.type === 'assessment') {
@@ -42,6 +43,14 @@ export function addPositionProcess(payload) {
   positionProcessesStore.processes.unshift(record)
   persist()
   return id
+}
+
+export function setProcessApplicantSigned(id, signed) {
+  const idx = positionProcessesStore.processes.findIndex(p => p.id === id)
+  if (idx === -1) return false
+  positionProcessesStore.processes[idx] = { ...positionProcessesStore.processes[idx], applicantSigned: !!signed }
+  persist()
+  return true
 }
 
 export function updatePositionProcess(id, patch) {

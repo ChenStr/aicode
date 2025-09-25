@@ -66,7 +66,7 @@ const startDialog = ref(false)
 const startType = ref('apply')
 const startTargetMtaId = ref('')
 const startSourceMtaId = ref('')
-const startMonths = ref(3)
+const startYears = ref(1)
 const startReason = ref('')
 
 // 从已完成的流程中获取用户已获得的MTA授权
@@ -112,7 +112,7 @@ const canConfirm = computed(() => {
     return !!startTargetMtaId.value && !!startSourceMtaId.value && !!startReason.value.trim()
   }
   // extend
-  return !!startTargetMtaId.value && (Number(startMonths.value) > 0) && !!startReason.value.trim()
+  return !!startTargetMtaId.value && (Number(startYears.value) > 0) && !!startReason.value.trim()
 })
 
 function openStart() {
@@ -129,7 +129,8 @@ watch(startType, () => {
   startTargetMtaId.value = ''
   startSourceMtaId.value = ''
   startReason.value = ''
-  startMonths.value = 3
+  startYears.value = 1
+  startYears.value = 1
 })
 
 function doStart() {
@@ -143,7 +144,7 @@ function doStart() {
     addProcess({ userId: props.currentUser.id, type: 'equivalent', sourceMtaId: startSourceMtaId.value, targetMtaId: startTargetMtaId.value, reason: startReason.value.trim() })
   } else if (startType.value === 'extend') {
     if (!startTargetMtaId.value) return ElMessage.error('请选择目标MTA授权')
-    addProcess({ userId: props.currentUser.id, type: 'extend', targetMtaId: startTargetMtaId.value, months: startMonths.value, reason: startReason.value.trim() })
+    addProcess({ userId: props.currentUser.id, type: 'extend', targetMtaId: startTargetMtaId.value, years: startYears.value, reason: startReason.value.trim() })
   }
   startDialog.value = false
   ElMessage.success('操作成功')
@@ -337,8 +338,8 @@ function viewDetail(row) {
               <el-option v-for="c in myCerts" :key="c.id" :label="getMtaName(c.mtaId)" :value="c.mtaId" />
             </el-select>
           </el-form-item>
-          <el-form-item label="延期月份">
-            <el-input-number v-model="startMonths" :min="1" :max="12" />
+          <el-form-item label="延期年限">
+            <el-input-number v-model="startYears" :min="1" :max="5" />
           </el-form-item>
           <el-form-item label="说明">
             <el-input v-model="startReason" type="textarea" :rows="3" placeholder="请输入延期说明" />

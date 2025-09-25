@@ -42,6 +42,44 @@ export const coursesStore = reactive({
       ],
       operationPracticeItems: []
     },
+    { 
+      id: 'c_004', 
+      name: '高压设备在岗实操培训', 
+      code: 'ELC-HV-004',
+      type: '在岗培训', 
+      status: '启用', 
+      department: '电气部',
+      skillPracticeItems: [
+        { id: 'p_004', workItemId: 'w_001', isRequired: true }
+      ],
+      operationPracticeItems: [
+        { id: 'p_005', workItemId: 'w_002', isRequired: true }
+      ]
+    },
+    { 
+      id: 'c_005', 
+      name: '配电系统维护在岗培训', 
+      code: 'ELC-PWR-005',
+      type: '在岗培训', 
+      status: '启用', 
+      department: '电气部',
+      skillPracticeItems: [
+        { id: 'p_006', workItemId: 'w_003', isRequired: true }
+      ],
+      operationPracticeItems: []
+    },
+    { 
+      id: 'c_006', 
+      name: '电气安全在岗培训', 
+      code: 'ELC-SAF-006',
+      type: '在岗培训', 
+      status: '启用', 
+      department: '电气部',
+      skillPracticeItems: [],
+      operationPracticeItems: [
+        { id: 'p_007', workItemId: 'w_004', isRequired: true }
+      ]
+    },
   ]
 })
 

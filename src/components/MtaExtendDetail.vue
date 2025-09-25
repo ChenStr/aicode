@@ -25,8 +25,8 @@ function getMtaName(mtaId) {
 const isSectionChief = computed(() => props.currentUser.role === 'section_chief')
 const isDeptManager = computed(() => props.currentUser.role === 'dept_manager')
 
-// 延期月份在科长与部门经理均可调整
-const extendMonths = ref(Number(props.processInfo.months) || 1)
+// 延期年限在科长与部门经理均可调整
+const extendYears = ref(Number(props.processInfo.years) || 1)
 
 function sectionChiefApprove() {
   ElMessageBox.confirm('确认审查通过并提交至部门经理批准？', '科长审查通过', { type: 'warning' })
@@ -36,7 +36,7 @@ function sectionChiefApprove() {
         currentNode: '部门经理审核',
         sectionChiefId: props.currentUser.id,
         sectionChiefAuditAt: new Date().toISOString().slice(0,10),
-        months: Number(extendMonths.value)
+        years: Number(extendYears.value)
       })
       ElMessage.success('已提交至部门经理审核')
       emit('audit-complete')
@@ -66,17 +66,17 @@ function deptManagerApprove() {
         currentNode: '已完成',
         deptManagerId: props.currentUser.id,
         deptManagerAuditAt: new Date().toISOString().slice(0,10),
-        months: Number(extendMonths.value)
+        years: Number(extendYears.value)
       })
 
       // 同步修改对应授权证书的截止时间（集中证书存储）
       const cert = userMtaCertsStore.items.find(c => c.userId === props.processInfo.userId && c.mtaId === props.processInfo.targetMtaId)
       if (cert) {
-        // 基于当前显示的到期日（若无则跳过）顺延月份
+        // 基于当前显示的到期日（若无则跳过）顺延年限
         const base = cert.expireAt || ''
         const baseDate = base ? new Date(base) : null
         if (baseDate && !Number.isNaN(baseDate.getTime())) {
-          baseDate.setMonth(baseDate.getMonth() + Number(extendMonths.value))
+          baseDate.setFullYear(baseDate.getFullYear() + Number(extendYears.value))
           cert.expireAt = baseDate.toISOString().slice(0,10)
         }
       }
@@ -109,7 +109,7 @@ function deptManagerApprove() {
         if (currentExpire) {
           const d = new Date(currentExpire)
           if (!Number.isNaN(d.getTime())) {
-            d.setMonth(d.getMonth() + Number(extendMonths.value))
+            d.setFullYear(d.getFullYear() + Number(extendYears.value))
             const newExpire = d.toISOString().slice(0,10)
             updateProcess(issuedProcess.id, {
               issuedCert: { ...issuedProcess.issuedCert, expireAt: newExpire }
@@ -164,7 +164,7 @@ function deptManagerReject() {
         <el-descriptions-item label="发起人">{{ getUserName(processInfo.userId) }}</el-descriptions-item>
         <el-descriptions-item label="部门">{{ getUserDepartment(processInfo.userId) }}</el-descriptions-item>
         <el-descriptions-item label="目标MTA授权" :span="2">{{ getMtaName(processInfo.targetMtaId) }}</el-descriptions-item>
-        <el-descriptions-item label="延期月份">{{ processInfo.months || 1 }} 个月</el-descriptions-item>
+        <el-descriptions-item label="延期年限">{{ processInfo.years || 1 }} 年</el-descriptions-item>
         <el-descriptions-item label="延期说明">{{ processInfo.reason || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -210,8 +210,8 @@ function deptManagerReject() {
         <div class="card-header"><span>科长审核</span></div>
       </template>
       <el-form label-width="120px">
-        <el-form-item label="延期月份">
-          <el-input-number v-model="extendMonths" :min="1" :max="12" />
+        <el-form-item label="延期年限">
+          <el-input-number v-model="extendYears" :min="1" :max="5" />
         </el-form-item>
       </el-form>
       <div class="audit-buttons">
@@ -226,8 +226,8 @@ function deptManagerReject() {
         <div class="card-header"><span>部门经理审核</span></div>
       </template>
       <el-form label-width="120px">
-        <el-form-item label="延期月份">
-          <el-input-number v-model="extendMonths" :min="1" :max="12" />
+        <el-form-item label="延期年限">
+          <el-input-number v-model="extendYears" :min="1" :max="5" />
         </el-form-item>
       </el-form>
       <div class="audit-buttons">

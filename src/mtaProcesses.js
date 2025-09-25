@@ -187,3 +187,54 @@ export function removeEquivalentProcessesByUser(userId) {
 })()
 
 
+// 为刘备追加“等效/延期”测试数据（在所有清理逻辑之后执行）
+;(function seedLiuBeiEquivalentAndExtendOnce() {
+  try {
+    const KEY = 'mta_seed_lb_eq_ext_added_v1'
+    const done = localStorage.getItem(KEY)
+    if (done) return
+    const now = new Date().toISOString().slice(0,10)
+
+    // 确保刘备拥有用于延期的原始MTA证书（m_001）
+    const hasM001 = userMtaCertsStore.items.some(c => c.userId === 'u_001' && c.mtaId === 'm_001')
+    if (!hasM001) {
+      userMtaCertsStore.items.push({
+        id: `cert_${Math.random().toString(36).slice(2,8)}`,
+        userId: 'u_001',
+        mtaId: 'm_001',
+        obtainedAt: '2024-01-15',
+        expireAt: '2025-01-15'
+      })
+    }
+
+    // 追加等效流程：m_001 等效到 m_002
+    mtaProcessesStore.processes.unshift({
+      id: `mp_eq_${Math.random().toString(36).slice(2,8)}`,
+      userId: 'u_001',
+      type: 'equivalent',
+      sourceMtaId: 'm_001',
+      targetMtaId: 'm_002',
+      reason: '测试数据：MTA授权等效申请',
+      status: 'in_progress',
+      currentNode: '培训工程师审核',
+      createdAt: now
+    })
+
+    // 追加延期流程：m_001 延期1年
+    mtaProcessesStore.processes.unshift({
+      id: `mp_ext_${Math.random().toString(36).slice(2,8)}`,
+      userId: 'u_001',
+      type: 'extend',
+      targetMtaId: 'm_001',
+      years: 1,
+      reason: '测试数据：MTA授权延期申请',
+      status: 'in_progress',
+      currentNode: '科长审核',
+      createdAt: now
+    })
+
+    persist()
+    localStorage.setItem(KEY, '1')
+  } catch {}
+})()
+

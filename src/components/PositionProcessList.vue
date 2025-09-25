@@ -67,8 +67,28 @@ const paged = computed(() => {
 // 发起流程对话框
 const startDialog = ref(false)
 const startType = ref('apply')
-const selectedPositionId = ref('')
+const selectedPositionId = ref('') // 用于 apply/assessment
 const availablePlans = ref([])
+const assessmentPositions = computed(() => positionsStore.items.filter(p => p.department === props.currentUser.department))
+
+// 等效流程：来源岗位（只读）与目标岗位
+const myLatestApprovedPosition = computed(() => {
+  const rows = listMyPositionProcesses(props.currentUser.id).filter(p => p.status === 'approved')
+  if (!rows.length) return null
+  return [...rows].sort((a,b)=> (a.createdAt < b.createdAt ? 1 : -1))[0]
+})
+const myDeptPositions = computed(() => positionsStore.items.filter(p => p.department === props.currentUser.department))
+const sourcePositionId = computed(() => myLatestApprovedPosition.value?.targetPositionId || myDeptPositions.value[0]?.id || '')
+const selectedTargetPositionId = ref('')
+const equivalentTargetOptions = computed(() => myDeptPositions.value)
+
+// 延期流程：当前岗位和延期年限
+const currentPosition = computed(() => {
+  if (!props.currentUser) return null
+  const deptPositions = positionsStore.items.filter(p => p.department === props.currentUser.department)
+  return deptPositions.length > 0 ? deptPositions[0] : null
+})
+const extendYears = ref(1)
 
 // 获取当前登录用户作为规划人员的正在进行中的岗位规划
 function getAvailablePositionPlans() {
@@ -102,6 +122,8 @@ function openStart() {
 // 处理流程类型变化
 function handleTypeChange() {
   selectedPositionId.value = ''
+  selectedTargetPositionId.value = ''
+  extendYears.value = 1
   if (startType.value === 'apply') {
     availablePlans.value = getAvailablePositionPlans()
   }
@@ -114,7 +136,7 @@ function confirmAndEnterDetail() {
     return
   }
   
-  if (startType.value === 'apply' && !selectedPositionId.value) {
+  if ((startType.value === 'apply' || startType.value === 'assessment') && !selectedPositionId.value) {
     ElMessage.warning('请选择目标岗位')
     return
   }
@@ -123,13 +145,32 @@ function confirmAndEnterDetail() {
   
   // 根据流程类型跳转到对应的详情页面
   if (startType.value === 'apply') {
-    emit('open-apply-detail', selectedPositionId.value, null)
+    emit('open-apply-detail', selectedPositionId.value, { type: 'apply' })
   } else if (startType.value === 'equivalent') {
-    emit('open-equivalent-detail', null)
+    // 仅将选择结果传入详情页，待申请人在详情页提交时再创建数据
+    if (!sourcePositionId.value) { ElMessage.warning('无法识别来源岗位'); return }
+    if (!selectedTargetPositionId.value) { ElMessage.warning('请选择目标岗位'); return }
+    if (selectedTargetPositionId.value === sourcePositionId.value) { ElMessage.warning('目标岗位不能与来源岗位相同'); return }
+    const draft = {
+      userId: props.currentUser.id,
+      type: 'equivalent',
+      sourcePositionId: sourcePositionId.value,
+      targetPositionId: selectedTargetPositionId.value,
+      reason: '岗位等效申请'
+    }
+    emit('open-equivalent-detail', draft)
   } else if (startType.value === 'extend') {
-    emit('open-extend-detail', null)
+    // 延期流程：传入当前岗位和延期年限
+    const draft = {
+      userId: props.currentUser.id,
+      type: 'extend',
+      targetPositionId: currentPosition.value?.id,
+      extendYears: extendYears.value,
+      reason: '岗位延期申请'
+    }
+    emit('open-extend-detail', draft)
   } else if (startType.value === 'assessment') {
-    emit('open-assessment-detail', null)
+    emit('open-apply-detail', selectedPositionId.value, { type: 'assessment' })
   }
 }
 
@@ -141,7 +182,7 @@ function viewDetail(row) {
   } else if (row.type === 'extend') {
     emit('open-extend-detail', row)
   } else if (row.type === 'assessment') {
-    emit('open-assessment-detail', row.id)
+    emit('open-apply-detail', row.targetPositionId, row)
   }
 }
 
@@ -244,6 +285,53 @@ function viewDetail(row) {
             暂无可申请的岗位，请先创建岗位规划或联系管理员
           </div>
         </el-form-item>
+
+        <el-form-item v-if="startType === 'assessment'" label="目标岗位" required>
+          <el-select v-model="selectedPositionId" placeholder="请选择目标岗位" filterable style="width: 100%">
+            <el-option 
+              v-for="pos in assessmentPositions" 
+              :key="pos.id" 
+              :label="`${pos.name}（${pos.level}）`" 
+              :value="pos.id" 
+            />
+          </el-select>
+          <div class="form-tip">
+            社聘/转岗考核需直接选择本部门的目标岗位
+          </div>
+        </el-form-item>
+        
+        <template v-if="startType === 'equivalent'">
+          <el-form-item label="来源岗位">
+            <el-input :model-value="equivalentTargetOptions.find(p=>p.id===sourcePositionId)?.name || '未识别'" disabled />
+            <div class="form-tip">来源岗位为当前已授权岗位；不可修改</div>
+          </el-form-item>
+          <el-form-item label="目标岗位" required>
+            <el-select v-model="selectedTargetPositionId" placeholder="请选择目标岗位" filterable style="width: 100%">
+              <el-option 
+                v-for="pos in equivalentTargetOptions" 
+                :key="pos.id" 
+                :label="`${pos.name}（${pos.level}）`" 
+                :value="pos.id" 
+              />
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <template v-if="startType === 'extend'">
+          <el-form-item label="当前岗位">
+            <el-input :model-value="currentPosition?.name || '未识别'" disabled />
+            <div class="form-tip">当前岗位不可修改</div>
+          </el-form-item>
+          <el-form-item label="延期年限" required>
+            <el-input-number 
+              v-model="extendYears" 
+              :min="1" 
+              :max="10" 
+              style="width: 200px"
+            />
+            <span style="margin-left: 8px; color: #666;">年</span>
+          </el-form-item>
+        </template>
         
         <el-form-item v-if="startType !== 'apply'" label="说明">
           <div class="form-tip">

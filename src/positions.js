@@ -12,6 +12,7 @@ export const positionsStore = reactive({
       parentPosition: '电气维护主管',
       level: '二级',
       department: '电气部',
+      requireWorkPlan: true,
       description: '负责电气设备的日常维护和故障处理',
       mtaAuthorizations: {
         minSelect: 2,
@@ -44,6 +45,7 @@ export const positionsStore = reactive({
       parentPosition: '',
       level: '三级',
       department: '电气部',
+      requireWorkPlan: true,
       description: '负责电气维护团队的管理和技术指导',
       mtaAuthorizations: {
         minSelect: 3,
@@ -75,6 +77,16 @@ function persist() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ items: positionsStore.items }))
   } catch {}
 }
+
+// 启动时规范化：电气部岗位强制 requireWorkPlan = true（覆盖历史数据）
+try {
+  (positionsStore.items || []).forEach(p => {
+    if (p && p.department === '电气部' && p.requireWorkPlan !== true) {
+      p.requireWorkPlan = true
+    }
+  })
+  persist()
+} catch {}
 
 export function listPositionsByDept(dept) {
   return positionsStore.items.filter(p => p.department === dept)

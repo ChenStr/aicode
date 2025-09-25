@@ -4,13 +4,17 @@ import { positionsStore } from '../positions'
 import { mtaAuthsStore } from '../mtaAuths'
 import { listMyMtaCerts } from '../mtaProcesses'
 import { listMyCourseScores, listMyPractices, listMyPracticeAudits } from '../trainingRecords'
-import { addPositionProcess } from '../positionProcesses'
+import { addPositionProcess, setProcessApplicantSigned, updatePositionProcess } from '../positionProcesses'
+import { createAssessment, createSummaryPlan, positionAssessmentsStore, findSummaryPlanByProcess, updateSummaryPlan } from '../positionAssessments'
 import { coursesStore } from '../courses'
 import { workItemsStore } from '../workItems'
 import { mtaProcessesStore, userMtaCertsStore } from '../mtaProcesses'
 import { USERS } from '../user'
+import { listTemplatesByPosition as listPositionCertTemplatesByPosition } from '../positionCertTemplates'
+import { createRevocation } from '../positionRevocations'
+import { listMyPositionProcesses } from '../positionProcesses'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Close, ArrowRight, User, House, Briefcase, Star, Reading, Tools, Document } from '@element-plus/icons-vue'
+import { Check, Close, ArrowRight, User, House, Briefcase, Star, Reading, Tools, Document, Edit, Lock } from '@element-plus/icons-vue'
 
 const props = defineProps({
   currentUser: { type: Object, required: true },
@@ -25,14 +29,68 @@ const targetPosition = computed(() => {
   return positionsStore.items.find(p => p.id === props.targetPositionId)
 })
 
-// 获取申请人信息
+// 申请人ID（优先用流程发起人）
+const applicantId = computed(() => (props.processInfo && props.processInfo.userId) ? props.processInfo.userId : props.currentUser.id)
+
+// 获取申请人信息（基于流程发起人）
 const applicant = computed(() => {
-  return USERS.find(u => u.id === props.currentUser.id) || props.currentUser
+  const u = USERS.find(u => u.id === applicantId.value)
+  return u || { id: applicantId.value, name: applicantId.value, department: '-', roleLabel: '-' }
 })
 
-// 获取用户的MTA证书
+// 获取申请人的当前岗位名称（从我的岗位中获取）
+const applicantCurrentPosition = computed(() => {
+  if (!applicant.value) return '-'
+  
+  // 优先获取申请人已批准的最新岗位流程
+  const processes = listMyPositionProcesses(applicantId.value).filter(p => p.status === 'approved')
+  if (processes.length > 0) {
+    // 取最新的岗位
+    const latestProcess = [...processes].sort((a,b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
+    const position = positionsStore.items.find(p => p.id === latestProcess.targetPositionId)
+    if (position) return position.name
+  }
+  
+  // 如果没有已批准的岗位流程，则采用"我的岗位"页面的逻辑：取部门下第一个岗位
+  const deptPositions = positionsStore.items.filter(p => p.department === applicant.value.department)
+  if (deptPositions.length > 0) {
+    return deptPositions[0].name
+  }
+  
+  // 最后回退到角色标签
+  return applicant.value.roleLabel
+})
+
+// 流程节点与签名权限
+const currentNode = computed(() => (props.processInfo && props.processInfo.currentNode) ? props.processInfo.currentNode : '')
+const isAuditMode = computed(() => !!(props.processInfo && props.processInfo.id))
+const isAssessmentType = computed(() => (props.processInfo && props.processInfo.type) === 'assessment')
+const isApplicant = computed(() => props.currentUser.id === applicantId.value)
+const canApplicantSign = computed(() => isApplicant.value)
+const canTrainingEngineerSign = computed(() => props.currentUser.role === 'training_admin' && currentNode.value === '培训工程师审核')
+const canSectionChiefSign = computed(() => props.currentUser.role === 'section_chief' && currentNode.value === '科长审核')
+const canDeptManagerSign = computed(() => props.currentUser.role === 'dept_manager' && currentNode.value === '部门经理签字')
+
+// 培训工程师签名状态（供后续节点查看）
+const trainingEngineerSignedStatus = computed(() => {
+  return !!((props.processInfo && props.processInfo.trainingEngineerSigned) || trainingEngineerSigned.value)
+})
+
+// 关联考核与总结（供审核材料查看）
+const relatedAssessment = computed(() => {
+  const pid = props.processInfo?.id
+  if (!pid) return null
+  return (positionAssessmentsStore.assessments || []).find(a => a.processId === pid) || null
+})
+const relatedSummaryPlan = computed(() => {
+  const pid = props.processInfo?.id
+  if (!pid) return null
+  return findSummaryPlanByProcess(pid)
+})
+
+// 获取申请人的MTA证书
 const myMtaCerts = computed(() => {
-  return userMtaCertsStore.items.filter(cert => cert.userId === props.currentUser.id)
+  return userMtaCertsStore.items.filter(cert => cert.userId === applicantId.value)
 })
 
 // 统一从流程签发记录中获取“我的MTA授权”，并校验有效期（与“我的MTA授权”页面一致口径）
@@ -65,7 +123,7 @@ function isMtaExpired(cert) {
 }
 const myValidMtaIds = computed(() => {
   const now = new Date().toISOString().slice(0,10)
-  const rows = (mtaProcessesStore.processes || []).filter(p => p.userId === props.currentUser.id && p.status === 'approved' && p.issuedCert && p.issuedCert.mtaId)
+  const rows = (mtaProcessesStore.processes || []).filter(p => p.userId === applicantId.value && p.status === 'approved' && p.issuedCert && p.issuedCert.mtaId)
   return new Set(rows.map(p => ({ id: p.issuedCert.mtaId, expireAt: calcExpireAt(p.issuedCert) }))
     .filter(r => !r.expireAt || r.expireAt >= now)
     .map(r => r.id))
@@ -73,12 +131,12 @@ const myValidMtaIds = computed(() => {
 
 // 获取申请人的课程成绩
 const myCourseScores = computed(() => {
-  return listMyCourseScores(props.currentUser.id)
+  return listMyCourseScores(applicantId.value)
 })
 
 // 获取申请人的实践记录
 const myPractices = computed(() => {
-  return listMyPractices(props.currentUser.id)
+  return listMyPractices(applicantId.value)
 })
 
 // 获取MTA授权名称
@@ -164,7 +222,7 @@ function getPracticeList() {
   if (!targetPosition.value) return []
   
   // 1) 使用实践审核记录中“考核完成(assessed)”次数
-  const audits = listMyPracticeAudits(props.currentUser.id) || []
+  const audits = listMyPracticeAudits(applicantId.value) || []
   const assessed = audits.filter(a => a.status === 'assessed')
   const assessedCounts = new Map()
   assessed.forEach(a => {
@@ -318,7 +376,7 @@ function checkPracticeRequirements() {
   const practiceConfig = position.skillPractices
   const userPracticeCounts = new Map()
   // 使用实践审核记录“通过”的次数
-  const audits = listMyPracticeAudits(props.currentUser.id) || []
+  const audits = listMyPracticeAudits(applicantId.value) || []
   const approved = audits.filter(a => a.status === 'assessed')
   approved.forEach(a => {
     const count = userPracticeCounts.get(a.workItemId) || 0
@@ -374,10 +432,10 @@ function checkPositionDescription() {
   qualificationResults.value.positionDesc = { passed: true, details }
 }
 
-// 申请表单
+// 申请表单（带回显）
 const applicationForm = ref({
-  reason: '',
-  additionalInfo: ''
+  reason: (props.processInfo && props.processInfo.reason) ? props.processInfo.reason : '',
+  additionalInfo: (props.processInfo && props.processInfo.additionalInfo) ? props.processInfo.additionalInfo : ''
 })
 
 // 提交申请
@@ -399,7 +457,7 @@ async function submitApplication() {
   
   try {
     await ElMessageBox.confirm(
-      '确认提交岗位申请？提交后将进入审核流程。',
+      isAssessmentType.value ? '确认提交社聘/转岗人员考核申请？提交后将进入审核流程。' : '确认提交岗位申请？提交后将进入审核流程。',
       '确认提交',
       {
         confirmButtonText: '确认',
@@ -408,13 +466,14 @@ async function submitApplication() {
       }
     )
     
-    // 创建岗位申请流程
+    // 创建岗位申请流程（assessment 与 apply 共用）
     const payload = {
       userId: props.currentUser.id,
-      type: 'apply',
+      type: isAssessmentType.value ? 'assessment' : 'apply',
       targetPositionId: props.targetPositionId,
       reason: applicationForm.value.reason.trim(),
-      additionalInfo: applicationForm.value.additionalInfo.trim()
+      additionalInfo: applicationForm.value.additionalInfo.trim(),
+      applicantSigned: !!applicantSigned.value
     }
     
     const processId = addPositionProcess(payload)
@@ -429,7 +488,7 @@ async function submitApplication() {
 function viewPracticeDetail(practice) {
   practiceDetailDialog.value = true
   practiceDetailTitle.value = practice.name
-  const audits = listMyPracticeAudits(props.currentUser.id) || []
+  const audits = listMyPracticeAudits(applicantId.value) || []
   practiceDetailRows.value = audits
     .filter(a => a.workItemId === practice.workItemId)
     .map(a => ({
@@ -464,22 +523,25 @@ function getAuditStatusType(status) {
 }
 
 // 页面状态管理
-const currentStep = ref(1) // 1: 资格审查页面, 2: 考核申请页面
+const currentStep = ref(1) // 1: 资格审查, 2: 考核申请, 3: 审核材料
 
 // 下一页按钮是否可用
 const canGoNext = computed(() => {
   return qualificationResults.value.mtaAuth.passed &&
          qualificationResults.value.specialCerts.passed &&
          qualificationResults.value.courses.passed &&
-         qualificationResults.value.practices.passed &&
-         (props.currentUser.role === 'training_engineer' ? trainingEngineerSigned.value : true)
+         qualificationResults.value.practices.passed
 })
 
 // 培训工程师电子签名状态
 const trainingEngineerSigned = ref(false)
+// 培训工程师选择考核组成员（同部门且为考核组成员）
+const assessorSelection = ref((props.processInfo && Array.isArray(props.processInfo.assessorIds)) ? [...props.processInfo.assessorIds] : [])
+const assessorOptions = computed(() => USERS.filter(u => u.role === 'assessor' && u.department === applicant.value.department))
+// 重复定义清理：assessorSelection/assessorOptions 已在上方声明
 
-// 签名状态
-const applicantSigned = ref(false)
+// 签名状态（回显）
+const applicantSigned = ref(!!(props.processInfo && props.processInfo.applicantSigned))
 const sectionChiefSigned = ref(false)
 const deptManagerSigned = ref(false)
 
@@ -493,6 +555,18 @@ function goToNextPage() {
 function goToPreviousPage() {
   currentStep.value = 1
 }
+
+function goToReviewPage() {
+  // 审核节点可打开“审核材料”页
+  if (isAuditMode.value && (currentNode.value === '科长审核' || currentNode.value === '项目经理审核' || currentNode.value === '部门经理签字')) {
+    currentStep.value = 3
+  }
+}
+
+// 默认进入“资格审查”页（点击详情先看资格审查）
+watch(currentNode, (v) => {
+  currentStep.value = 1
+}, { immediate: true })
 
 // 执行电子签名
 function performElectronicSignature() {
@@ -524,10 +598,126 @@ function performApplicantSignature() {
     }
   ).then(() => {
     applicantSigned.value = true
+    if (props.processInfo && props.processInfo.id) {
+      setProcessApplicantSigned(props.processInfo.id, true)
+    }
     ElMessage.success('申请人电子签名成功')
   }).catch(() => {
     // 用户取消签名
   })
+}
+
+// 审批通过
+async function approveProcess() {
+  if (!(props.processInfo && props.processInfo.id)) return
+  const pid = props.processInfo.id
+  const node = currentNode.value
+  if (node === '培训工程师审核') {
+    if (!trainingEngineerSigned.value) {
+      ElMessage.warning('请先完成培训工程师电子签名')
+      return
+    }
+    if (!assessorSelection.value || assessorSelection.value.length === 0) {
+      ElMessage.warning('请至少选择一名考核组成员')
+      return
+    }
+    // 创建岗位考核与（可选）工作总结/设想
+    const applicant = USERS.find(u => u.id === applicantId.value) || {}
+    const pos = targetPosition.value
+    const currentPositionLabel = (USERS.find(u => u.id === applicantId.value)?.roleLabel) || '-'
+    const assessmentId = createAssessment({
+      processId: pid,
+      applicantId: applicantId.value,
+      department: applicant.department,
+      targetPositionId: pos?.id,
+      currentPositionLabel,
+      assessorIds: [...assessorSelection.value]
+    })
+    if (pos?.requireWorkPlan) {
+      createSummaryPlan({ processId: pid, applicantId: applicantId.value, department: applicant.department, targetPositionId: pos.id })
+    }
+    updatePositionProcess(pid, {
+      trainingEngineerSigned: true,
+      assessorIds: [...assessorSelection.value],
+      currentNode: '岗位考核'
+    })
+    ElMessage.success('已通过，已创建岗位考核记录并流转至“岗位考核”')
+    emit('audit-complete')
+    return
+  }
+  if (node === '科长审核') {
+    if (!sectionChiefSigned.value) {
+      ElMessage.warning('请先完成科长电子签名')
+      return
+    }
+    updatePositionProcess(pid, {
+      sectionChiefSigned: true,
+      currentNode: '项目经理审核'
+    })
+    ElMessage.success('已通过，流转至“项目经理审核”')
+    emit('audit-complete')
+    return
+  }
+  if (node === '项目经理审核') {
+    if (!pmCert.value.templateId) { ElMessage.warning('请选择岗位证书模版'); return }
+    updatePositionProcess(pid, {
+      selectedPositionTemplateId: pmCert.value.templateId,
+      selectedPositionExpireYears: pmCert.value.expireYears,
+      currentNode: '部门经理签字'
+    })
+    ElMessage.success('已通过，流转至“部门经理签字”')
+    emit('audit-complete')
+    return
+  }
+  if (node === '部门经理签字') {
+    if (!deptManagerSigned.value) {
+      ElMessage.warning('请先完成部门经理电子签名')
+      return
+    }
+    const issuedAt = new Date().toISOString().slice(0,10)
+    const expireYears = Number(props.processInfo?.selectedPositionExpireYears || pmCert.value.expireYears || 3)
+    updatePositionProcess(pid, {
+      deptManagerSigned: true,
+      status: 'approved',
+      currentNode: '已完成',
+      issuedAt,
+      expireYears
+    })
+    try {
+      const userId = applicantId.value
+      const user = USERS.find(u => u.id === userId) || { id: userId, name: userId, department: props.currentUser.department }
+      const processes = listMyPositionProcesses(userId).filter(p => p.status === 'approved')
+      const previous = processes.sort((a,b)=> (a.createdAt < b.createdAt ? 1 : -1))[0]
+      if (previous && previous.targetPositionId) {
+        createRevocation({
+          userId: user.id,
+          userName: user.name,
+          department: user.department,
+          revokedPositionId: previous.targetPositionId,
+          authorizedAt: previous.issuedAt || '',
+          revokedAt: issuedAt,
+          status: 'pending'
+        })
+      }
+    } catch {}
+    ElMessage.success('流程已批准完成，已更新岗位并创建撤销记录')
+    emit('audit-complete')
+  }
+}
+
+// 审批驳回
+async function rejectProcess() {
+  if (!(props.processInfo && props.processInfo.id)) return
+  try {
+    await ElMessageBox.confirm('确定要驳回该申请吗？将退回申请人重新发起。', '驳回确认', {
+      confirmButtonText: '驳回',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    updatePositionProcess(props.processInfo.id, { status: 'rejected', currentNode: '已驳回' })
+    ElMessage.success('已驳回申请')
+    emit('audit-complete')
+  } catch {}
 }
 
 // 科长电子签名
@@ -644,11 +834,12 @@ watch(targetPosition, (v) => {
 <template>
   <section class="position-apply-detail">
     <div class="page-header">
-      <h2>岗位申请详情</h2>
+      <h2>{{ isAssessmentType ? '社聘/转岗人员考核' : '岗位申请详情' }}</h2>
       <div class="step-indicator">
         <el-steps :active="currentStep - 1" simple>
           <el-step title="资格审查" />
           <el-step title="考核申请" />
+          <el-step title="审核材料" />
         </el-steps>
       </div>
     </div>
@@ -666,7 +857,7 @@ watch(targetPosition, (v) => {
         <el-descriptions :column="2" border>
           <el-descriptions-item label="姓名">{{ applicant.name }}</el-descriptions-item>
           <el-descriptions-item label="部门">{{ applicant.department }}</el-descriptions-item>
-          <el-descriptions-item label="当前岗位">{{ applicant.roleLabel }}</el-descriptions-item>
+          <el-descriptions-item label="当前岗位">{{ applicantCurrentPosition }}</el-descriptions-item>
           <el-descriptions-item label="申请时间">{{ new Date().toLocaleDateString() }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
@@ -925,7 +1116,7 @@ watch(targetPosition, (v) => {
         </template>
         
         <div class="signature-section">
-          <div v-if="props.currentUser.role === 'training_engineer'" class="signature-area">
+          <div v-if="canTrainingEngineerSign" class="signature-area">
             <div v-if="!trainingEngineerSigned" class="signature-prompt">
               <el-icon><Edit /></el-icon>
               <span>请进行电子签名确认</span>
@@ -953,8 +1144,13 @@ watch(targetPosition, (v) => {
             </el-button>
           </div>
           <div v-else class="signature-disabled">
-            <el-icon><Lock /></el-icon>
-            <span>只有培训工程师才能进行电子签名操作</span>
+            <div v-if="isAuditMode && (currentNode === '科长审核' || currentNode === '项目经理审核' || currentNode === '部门经理签字')" style="display:flex; align-items:center; gap:8px;">
+              <el-tag :type="trainingEngineerSignedStatus ? 'success' : 'info'" size="small">培训工程师签名：{{ trainingEngineerSignedStatus ? '已签' : '未签' }}</el-tag>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <el-icon><Lock /></el-icon>
+              <span>仅在“培训工程师审核”节点且为培训工程师时可签名</span>
+            </div>
           </div>
         </div>
       </el-card>
@@ -969,6 +1165,7 @@ watch(targetPosition, (v) => {
         >
           下一页
         </el-button>
+        <el-button v-if="isAuditMode && (currentNode === '科长审核' || currentNode === '项目经理审核' || currentNode === '部门经理签字')" @click="goToReviewPage">审核材料</el-button>
       </div>
     </div>
 
@@ -986,7 +1183,7 @@ watch(targetPosition, (v) => {
           <el-descriptions-item label="姓名">{{ applicant.name }}</el-descriptions-item>
           <el-descriptions-item label="部门">{{ applicant.department }}</el-descriptions-item>
           <el-descriptions-item label="申请日期">{{ new Date().toLocaleDateString() }}</el-descriptions-item>
-          <el-descriptions-item label="现工作岗位">{{ applicant.roleLabel }}</el-descriptions-item>
+          <el-descriptions-item label="现工作岗位">{{ applicantCurrentPosition }}</el-descriptions-item>
           <el-descriptions-item label="拟申请授权岗位" :span="2">{{ targetPosition?.name || '-' }}</el-descriptions-item>
         </el-descriptions>
         
@@ -1064,6 +1261,24 @@ watch(targetPosition, (v) => {
         </el-form>
       </el-card>
 
+      <!-- 培训工程师：安排考核组成员（仅在培训工程师审核节点显示） -->
+      <el-card v-if="isAuditMode && canTrainingEngineerSign && currentNode === '培训工程师审核'" class="info-card" shadow="never">
+        <template #header>
+          <div class="card-header">
+            <el-icon><User /></el-icon>
+            <span>安排考核组成员</span>
+          </div>
+        </template>
+        <el-form label-width="120px">
+          <el-form-item label="考核组成员" required>
+            <el-select v-model="assessorSelection" multiple filterable placeholder="请选择考核组成员" style="width: 100%">
+              <el-option v-for="u in assessorOptions" :key="u.id" :label="`${u.name}（${u.department}）`" :value="u.id" />
+            </el-select>
+          </el-form-item>
+          <div class="form-tip">需至少选择一名考核组成员</div>
+        </el-form>
+      </el-card>
+
       <!-- 签名信息 -->
       <el-card class="info-card" shadow="never">
         <template #header>
@@ -1088,7 +1303,7 @@ watch(targetPosition, (v) => {
                 <el-tag type="success" size="small">已确认</el-tag>
               </div>
               <el-button 
-                v-if="!applicantSigned"
+                v-if="!applicantSigned && canApplicantSign"
                 type="primary" 
                 @click="performApplicantSignature"
                 class="signature-button"
@@ -1096,13 +1311,17 @@ watch(targetPosition, (v) => {
                 电子签名
               </el-button>
               <el-button 
-                v-else
+                v-else-if="applicantSigned && canApplicantSign"
                 type="warning" 
                 @click="applicantSigned = false"
                 class="signature-button"
               >
                 重新签名
               </el-button>
+              <div v-if="!canApplicantSign" class="signature-disabled">
+                <el-icon><Lock /></el-icon>
+                <span>只有申请人本人才能进行此处签名</span>
+              </div>
             </div>
           </div>
 
@@ -1110,7 +1329,7 @@ watch(targetPosition, (v) => {
           <div class="signature-item">
             <div class="signature-label">审查（科长）签名：</div>
             <div class="signature-content">
-              <div v-if="props.currentUser.role === 'section_chief'" class="signature-area">
+              <div v-if="canSectionChiefSign" class="signature-area">
                 <div v-if="!sectionChiefSigned" class="signature-prompt">
                   <el-icon><Edit /></el-icon>
                   <span>请进行电子签名确认</span>
@@ -1139,7 +1358,7 @@ watch(targetPosition, (v) => {
               </div>
               <div v-else class="signature-disabled">
                 <el-icon><Lock /></el-icon>
-                <span>只有科长才能进行审查签名</span>
+                <span>仅在“科长审核”节点，且由科长进行审查签名</span>
               </div>
             </div>
           </div>
@@ -1148,7 +1367,7 @@ watch(targetPosition, (v) => {
           <div class="signature-item">
             <div class="signature-label">批准（部门经理）签名：</div>
             <div class="signature-content">
-              <div v-if="props.currentUser.role === 'dept_manager'" class="signature-area">
+              <div v-if="canDeptManagerSign" class="signature-area">
                 <div v-if="!deptManagerSigned" class="signature-prompt">
                   <el-icon><Edit /></el-icon>
                   <span>请进行电子签名确认</span>
@@ -1177,7 +1396,7 @@ watch(targetPosition, (v) => {
               </div>
               <div v-else class="signature-disabled">
                 <el-icon><Lock /></el-icon>
-                <span>只有部门经理才能进行批准签名</span>
+                <span>仅在“部门经理审核/签字”节点，且由部门经理进行批准签名</span>
               </div>
             </div>
           </div>
@@ -1186,15 +1405,104 @@ watch(targetPosition, (v) => {
 
       <!-- 操作按钮 -->
       <div class="action-buttons">
-        <el-button @click="goToPreviousPage">上一步</el-button>
-        <el-button @click="emit('back')">取消</el-button>
-        <el-button 
-          type="primary" 
-          :disabled="!targetPosition || !overallQualification || !applicationForm.reason.trim() || !applicantSigned"
-          @click="submitApplication"
-        >
-          提交申请
-        </el-button>
+        <template v-if="isAuditMode && currentNode === '培训工程师审核' && canTrainingEngineerSign">
+          <el-button @click="goToPreviousPage">上一步</el-button>
+          <el-button @click="emit('back')">取消</el-button>
+          <el-button type="danger" @click="rejectProcess">驳回</el-button>
+          <el-button type="primary" :disabled="!trainingEngineerSigned || !assessorSelection || assessorSelection.length === 0" @click="approveProcess">通过</el-button>
+        </template>
+        <template v-else-if="isAuditMode && currentNode === '科长审核' && canSectionChiefSign">
+          <el-button @click="goToPreviousPage">上一步</el-button>
+          <el-button @click="emit('back')">取消</el-button>
+          <el-button @click="goToReviewPage">审核材料</el-button>
+          <el-button type="danger" @click="rejectProcess">驳回</el-button>
+          <el-button type="primary" :disabled="!sectionChiefSigned" @click="approveProcess">通过</el-button>
+        </template>
+        <template v-else-if="isAuditMode && currentNode === '部门经理签字' && canDeptManagerSign">
+          <el-button @click="goToPreviousPage">上一步</el-button>
+          <el-button @click="emit('back')">取消</el-button>
+          <el-button @click="goToReviewPage">审核材料</el-button>
+          <el-button type="danger" @click="rejectProcess">驳回</el-button>
+          <el-button type="primary" :disabled="!deptManagerSigned" @click="approveProcess">通过</el-button>
+        </template>
+        <template v-else>
+          <el-button @click="goToPreviousPage">上一步</el-button>
+          <el-button @click="emit('back')">取消</el-button>
+          <el-button 
+            type="primary" 
+            :disabled="!targetPosition || !overallQualification || !applicationForm.reason.trim() || !applicantSigned"
+            @click="submitApplication"
+          >
+            提交申请
+          </el-button>
+          <el按钮 v-if="isAuditMode && (currentNode === '科长审核' || currentNode === '项目经理审核' || currentNode === '部门经理签字')" @click="goToReviewPage">审核材料</el按钮>
+        </template>
+      </div>
+    </div>
+
+    <!-- 步骤3：审核材料（显示岗位考核与工作总结/设想） -->
+    <div v-if="currentStep === 3">
+      <el-card v-if="relatedAssessment" class="info-card" shadow="never">
+        <template #header>
+          <div class="card-header">
+            <el-icon><Star /></el-icon>
+            <span>岗位考核（审阅）</span>
+          </div>
+        </template>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="考核结果">
+            <el-tag :type="relatedAssessment.finalResult === 'suggest_authorize' ? 'success' : (relatedAssessment.finalResult === 'failed' ? 'danger' : 'info')">
+              {{ relatedAssessment.finalResult === 'suggest_authorize' ? '建议给予岗位技术授权' : (relatedAssessment.finalResult === 'failed' ? '答辩不合格不予授权' : '待评定') }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="relatedAssessment.status === 'completed' ? 'success' : 'warning'">{{ relatedAssessment.status === 'completed' ? '已完成' : '进行中' }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="汇报内容" :span="2">{{ relatedAssessment.reportContent || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="提问及回答情况" :span="2">{{ relatedAssessment.qaContent || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="relatedAssessment.records || []" style="margin-top: 12px;" size="small" stripe>
+          <el-table-column label="考核组成员" min-width="180">
+            <template #default="{ row }">{{ USERS.find(u => u.id === row.assessorId)?.name || row.assessorId }}</template>
+          </el-table-column>
+          <el-table-column label="签名/日期" min-width="200">
+            <template #default="{ row }">
+              <div v-if="row.signed">已签名（{{ row.signedAt }}）</div>
+              <div v-else>未签名</div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+
+      <el-card v-if="relatedSummaryPlan" class="info-card" shadow="never">
+        <template #header>
+          <div class="card-header">
+            <el-icon><Document /></el-icon>
+            <span>岗位工作总结与设想（审阅）</span>
+          </div>
+        </template>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="岗位培训期间工作总结">{{ relatedSummaryPlan.summaryText || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="任新职后工作思路及设想">{{ relatedSummaryPlan.planText || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="部门经理签字/日期">
+            <span v-if="relatedSummaryPlan.managerSigned">已签名（{{ relatedSummaryPlan.managerSignedAt || '-' }}）</span>
+            <span v-else>未签名</span>
+          </el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <div class="action-buttons">
+        <el-button @click="currentStep = 2">返回考核申请</el-button>
+        <template v-if="isAuditMode && currentNode === '科长审核' && canSectionChiefSign">
+          <el-button @click="emit('back')">取消</el-button>
+          <el-button type="danger" @click="rejectProcess">驳回</el-button>
+          <el-button type="primary" :disabled="!sectionChiefSigned" @click="approveProcess">通过</el-button>
+        </template>
+        <template v-else-if="isAuditMode && (currentNode === '部门经理审核' || currentNode === '部门经理签字') && canDeptManagerSign">
+          <el-button @click="emit('back')">取消</el-button>
+          <el-button type="danger" @click="rejectProcess">驳回</el-button>
+          <el-button type="primary" :disabled="!deptManagerSigned" @click="approveProcess">通过</el-button>
+        </template>
       </div>
     </div>
   </section>

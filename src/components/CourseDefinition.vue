@@ -147,6 +147,7 @@ function openDetail(c) { detail.value = c; showDetail.value = true }
             <el-option label="通用" value="通用" />
             <el-option label="专业" value="专业" />
             <el-option label="安全" value="安全" />
+            <el-option label="在岗培训" value="在岗培训" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -167,6 +168,7 @@ function openDetail(c) { detail.value = c; showDetail.value = true }
             <el-button type="primary" link @click="openDetail(row)">{{ row.name }}</el-button>
           </template>
         </el-table-column>
+        <el-table-column prop="code" label="课程编号" width="150" />
         <el-table-column prop="type" label="类型" width="120">
           <template #default="{ row }">
             <el-tag :type="row.type === '通用' ? 'info' : row.type === '专业' ? 'success' : 'warning'">
@@ -215,6 +217,7 @@ function openDetail(c) { detail.value = c; showDetail.value = true }
             <el-option label="通用" value="通用" />
             <el-option label="专业" value="专业" />
             <el-option label="安全" value="安全" />
+            <el-option label="在岗培训" value="在岗培训" />
           </el-select>
         </el-form-item>
         <el-form-item label="课程状态">
@@ -244,6 +247,7 @@ function openDetail(c) { detail.value = c; showDetail.value = true }
     >
       <el-descriptions :column="1" border>
         <el-descriptions-item label="课程名称">{{ detail?.name }}</el-descriptions-item>
+        <el-descriptions-item label="课程编号">{{ detail?.code }}</el-descriptions-item>
         <el-descriptions-item label="课程类型">
           <el-tag :type="detail?.type === '通用' ? 'info' : detail?.type === '专业' ? 'success' : 'warning'">
             {{ detail?.type }}

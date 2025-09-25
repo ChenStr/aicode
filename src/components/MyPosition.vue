@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { USERS, currentUser } from '../user'
 import { positionsStore } from '../positions'
 import { listMyMtaCerts } from '../mtaProcesses'
+import { listMyPositionProcesses } from '../positionProcesses'
+import { mtaAuthsStore } from '../mtaAuths'
 
 const me = computed(() => USERS.find(u => u.id === currentUser.id) || currentUser)
 
@@ -20,7 +22,28 @@ const mySpecialCerts = computed(() => {
 })
 
 function getMtaName(mtaId) {
+  const m = (mtaAuthsStore.items || []).find(i => i.id === mtaId)
+  if (m) return `${m.techName}（${m.code}）`
   return mtaId
+}
+
+// 最近一次已批准的岗位授权（用于显示授权日期和失效日期）
+const myLatestApprovedPosition = computed(() => {
+  if (!me.value) return null
+  const processes = (listMyPositionProcesses(me.value.id) || []).filter(p => p.status === 'approved')
+  if (!processes.length) return null
+  // 取最新的（createdAt 最大）
+  const sorted = [...processes].sort((a,b) => (a.createdAt < b.createdAt ? 1 : -1))
+  return sorted[0]
+})
+
+function calcExpireAt(issuedAt, years) {
+  if (!issuedAt) return ''
+  const d = new Date(issuedAt)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = Number(years) || 1
+  d.setFullYear(d.getFullYear() + y)
+  return d.toISOString().slice(0,10)
 }
 </script>
 
@@ -36,6 +59,8 @@ function getMtaName(mtaId) {
         <el-descriptions-item label="岗位名称">{{ myPosition?.name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="岗位等级">{{ myPosition?.level || '-' }}</el-descriptions-item>
         <el-descriptions-item label="上级岗位">{{ myPosition?.parentPosition || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="授权日期">{{ myLatestApprovedPosition?.issuedAt || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="失效日期">{{ calcExpireAt(myLatestApprovedPosition?.issuedAt, myLatestApprovedPosition?.expireYears || 3) || '-' }}</el-descriptions-item>
         <el-descriptions-item label="岗位说明" :span="2">{{ myPosition?.description || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-card>

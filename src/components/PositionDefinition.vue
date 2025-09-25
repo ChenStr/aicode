@@ -50,6 +50,7 @@ const form = ref({
   parentPosition: '',
   level: '一级',
   description: '',
+  requireWorkPlan: false,
   mtaAuthorizations: { minSelect: 0, items: [] },
   specialCertIds: [],
   courses: [],
@@ -70,6 +71,8 @@ function openAdd() {
 function openEdit(row) { 
   editingId.value = row.id
   form.value = JSON.parse(JSON.stringify(row))
+  // 若为电气部岗位，强制设为true（隐藏编辑）
+  if (form.value.department === '电气部') form.value.requireWorkPlan = true
   // 过滤掉非本部门课程
   const allowed = new Set((courseOptions.value || []).map(c => c.id))
   form.value.courses = (form.value.courses || []).filter(id => allowed.has(id))
@@ -97,6 +100,7 @@ function resetForm() {
     parentPosition: '', 
     level: '一级', 
     description: '',
+    requireWorkPlan: props.currentUser.department === '电气部' ? true : false,
     mtaAuthorizations: { minSelect: 0, items: [] },
     specialCertIds: [],
     _specialCertMinSelect: 0,
@@ -316,6 +320,14 @@ function getCourseTypeColor(type) {
             <el-col :span="12">
               <el-form-item label="所属部门">
                 <el-input :value="props.currentUser.department" disabled />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12" v-if="props.currentUser.department !== '电气部'">
+              <el-form-item label="是否需填工作设想">
+                <el-radio-group v-model="form.requireWorkPlan">
+                  <el-radio :label="true">是</el-radio>
+                  <el-radio :label="false">否</el-radio>
+                </el-radio-group>
               </el-form-item>
             </el-col>
           </el-row>
